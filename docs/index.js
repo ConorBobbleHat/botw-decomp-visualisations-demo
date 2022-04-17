@@ -160,7 +160,7 @@ class BotwVisualisation {
     }
 
     async fetchData() {
-        this.classData = await d3.json("/graph.json");
+        this.classData = await d3.json("graph.json");
 
         // Collapse everything
         function recursivelyCollapse(obj) {
