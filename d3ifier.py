@@ -1,7 +1,8 @@
+import yaml
+
 import json
 import csv
 import re
-from tqdm import tqdm
 
 with open("out.json") as f:
     d = json.load(f)
@@ -18,6 +19,14 @@ def demangle_function_name(function_name):
 
         try:
             while True:
+                if function_name_working.startswith("C"):
+                    # Constructor - special case.
+                    function_fqn_pieces.append(function_fqn_pieces[-1])
+                
+                if function_name_working.startswith("D"):
+                    # Destructor - special case.
+                    function_fqn_pieces.append("~" + function_fqn_pieces[-1])
+
                 fqn_length = re.match(r"(^\d+)", function_name_working).group(0)
                 fqn_length_len = len(fqn_length)
                 fqn_length = int(fqn_length)
@@ -42,23 +51,48 @@ def parse_row(row):
 with open("botw/data/uking_functions.csv", newline="") as f:
     functions = list(map(parse_row, csv.DictReader(f)))
 
-NODES = []
-EDGES = []
+CLASS_FQN_NAMES = list(d.keys())
+CLASS_NAMES = [i.split("::")[-1] for i in CLASS_FQN_NAMES]
+CLASS_NAME_TO_FQN_MAP = {i.split("::")[-1] : i for i in CLASS_FQN_NAMES}
 
-edge_index = 0
+CLASS_FUNCTIONS = {}
 
-created_namespace_nodes = {}
+for function in functions:
+    function_name_parts = function['name'].split("::")
+    function_class_name = function_name_parts[-2] if len(function_name_parts) >= 2 else function_name_parts[-1]
+       
+    if function_class_name in CLASS_NAMES:
+        fqn = CLASS_NAME_TO_FQN_MAP[function_class_name]
+        if fqn not in CLASS_FUNCTIONS:
+            CLASS_FUNCTIONS[fqn] = []
+
+        CLASS_FUNCTIONS[fqn].append(function)
+
+CLASS_STATUS_OVERRIDE_FILES = [
+    ("botw/data/status_action.yml", "uking::"),
+    ("botw/data/status_ai.yml", "uking::"),
+    ("botw/data/status_query.yml", "uking::")
+]
+
+CLASS_STATUS_OVERRIDES = {}
+
+for (file, namespace_prefix) in CLASS_STATUS_OVERRIDE_FILES:
+    with open(file) as f:
+        for (class_, status) in yaml.safe_load(f).items():
+            fqn = namespace_prefix + class_
+
+            status = status['status']
+            CLASS_STATUS_OVERRIDES[fqn] = "partially_decompiled_class" if status == "pending" else "decompiled_class"
 
 def determine_class_status(class_):
-    class_functions = []
-    for function in functions:
-        function_name_parts = function['name'].split("::")
-        function_class_name = function_name_parts[-2] if len(function_name_parts) >= 2 else function_name_parts[-1]
+    if class_ in CLASS_STATUS_OVERRIDES:
+        return CLASS_STATUS_OVERRIDES[class_]
 
-        class_name = class_.split("::")[-1]
-        
-        if function_class_name == class_name:
-            class_functions.append(function)
+    try:
+        class_functions = CLASS_FUNCTIONS[class_]
+    except Exception as e:
+        # No functions found whatsoever
+        return "undecompiled_class"
 
     class_function_qualities = set([i['quality'] for i in class_functions])
 
@@ -69,36 +103,35 @@ def determine_class_status(class_):
     
     return "partially_decompiled_class"
 
-def create_namespace_node(namespace):
-    global edge_index, created_namespace_nodes
+TREE = {"id": 0, "name": "root", "type": "namespace", "children": []}
+node_id_counter = 1
 
-    parts = namespace.split("::")
+for class_ in d.keys():
+    class_fqn_pieces = class_.split("::")
+    class_name = class_fqn_pieces[-1]
 
-    for i in range(1, len(parts) + 1):
-        current_namespace = "::".join(parts[:i])
-
-        if current_namespace in created_namespace_nodes:
-            continue
-
-        NODES.append({"id": edge_index, "name": current_namespace, "type": "namespace"})
-        created_namespace_nodes[current_namespace] = edge_index
-
-        if i != 1:
-            EDGES.append({"source": edge_index, "target": created_namespace_nodes["::".join(parts[:i-1])]})
+    current_tree = TREE['children']
+    current_fqn = ""
+    for piece in class_fqn_pieces:
+        current_fqn += piece
         
-        edge_index += 1
+        parent_index = next(iter(index for (index, d) in enumerate(current_tree) if d['name'] == current_fqn), -1)
 
+        if parent_index == -1:
+            new_child = {"id": node_id_counter, "name": current_fqn, "type": "namespace", "children": []}
+            node_id_counter += 1
 
-for class_ in tqdm(d.keys()):
-    namespace = "::".join(class_.split("::")[:-1])
+            if class_name == piece:
+                # We've hit the end of this FQN.
+                # Add on some metadata about this class
+                new_child["type"] = determine_class_status(class_)
 
-    if namespace not in created_namespace_nodes:
-        create_namespace_node(namespace)
+            current_tree.append(new_child)
+            current_tree = current_tree[-1]['children']
+        else:
+            current_tree = current_tree[parent_index]['children']
 
-    NODES.append({"id": edge_index, "name": class_, "type": determine_class_status(class_)})
-    EDGES.append({"source": edge_index, "target": created_namespace_nodes[namespace]})
-    edge_index += 1
-
+        current_fqn += "::"
 
 with open("site/graph.json", "w") as f:
-    json.dump({"nodes": NODES, "edges": EDGES}, f)
+    json.dump(TREE, f)

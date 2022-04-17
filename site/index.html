@@ -23,27 +23,33 @@
             stroke-width: 1.5px;
         }
 
-        .node text {
-            font: 10px sans-serif;
-            pointer-events: none;
-            text-anchor: middle;
-        }
-
         #overlay {
             position: absolute;
             background-color: rgba(100, 100, 100, 0.5);
             margin: 10px;
             padding: 10px;
             right: 0;
-            font-size: 4em;
             font-family: "Georgia", serif
+        }
+
+        #overlay-class-name {
+            font-size: 4em;
+            margin-top: 0;
+            margin-bottom: .1em;
+        }
+
+        #overlay-class-status {
+            font-size: 1em;
+            margin-top: 0;
+            margin-bottom: 0;
         }
     </style>
 </head>
 
 <body>
-    <div id="overlay">
-        Hi
+    <div id="overlay" style="display: none;">
+        <p id="overlay-class-name"></p>
+        <i id="overlay-class-status"></i>
     </div>
 
     <script src="d3.v7.min.js"></script>
