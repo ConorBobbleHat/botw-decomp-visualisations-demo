@@ -3,32 +3,191 @@ class BotwVisualisation {
         this.el = options.el;
         this.width = options.width;
         this.height = options.height;
+        this.margin = options.margin;
 
-        this.overlay = {
-            overlay: document.getElementById("overlay"),
-            className: document.getElementById("overlay-class-name"),
-            classStatus: document.getElementById("overlay-class-status")
-        };
+        this.colors = {
+            "undecompiled_class": "#d62728",
+            "partially_decompiled_class": "#ff7f0e",
+            "decompiled_class": "#2ca02c"
+        }
+
+        this.overlays = {
+            class: {
+                box: document.getElementById("class-overlay"),
+                name: document.getElementById("class-overlay-name"),
+                info: document.getElementById("class-overlay-info")
+            },
+            settings: {
+                choices: document.getElementById("settings-overlay-area-choices")
+            }
+        }
+
+        this.AREA_FUNCTIONS = {
+            "constant": (tree) => { tree.count() },
+            "num_methods": (tree) => { tree.sum(d => d.num_methods) },
+            "total_binary_size": (tree) => { tree.sum(d => d.total_binary_size) }
+        }
+
+        const AREA_FUNCTION_OPTIONS = [
+            { name: "Constant", id: "constant" },
+            { name: "Number of Methods", id: "num_methods" },
+            { name: "Total Binary Size", id: "total_binary_size" }
+        ];
+
+        this.area_function = this.AREA_FUNCTIONS['constant'];
+
+        let areaFunctionRadios = d3.select(this.overlays.settings.choices)
+            .selectAll("label")
+            .data(AREA_FUNCTION_OPTIONS)
+            .join("label")
+            .text(d => d.name)
+
+        areaFunctionRadios.append("input")
+            .lower()
+            .attr("type", "radio")
+            .attr("name", "areaOptions")
+            .on("change", (e, d) => this.onAreaFunctionChange(e, d))
+            .filter(d => d.id == "constant")
+            .property("checked", true)
+
+        areaFunctionRadios
+            .append("br")
+    }
+
+    onAreaFunctionChange(e, d) {
+        this.area_function = this.AREA_FUNCTIONS[d.id];
+        this.update();
+    }
+
+    onClassClick(e, d) {
+        if (d.data.type == "namespace")  {
+            this.overlays.class.box.style.display = "none";
+            return false;
+        }
+
+        this.overlays.class.box.style.display = "block";
+        this.overlays.class.name.innerText = d.data.name;
+
+        let status = {
+            "undecompiled_class": "Undecompiled",
+            "partially_decompiled_class": "Partially Decompiled",
+            "decompiled_class": "Decompiled"
+        }[d.data.type];
+
+        this.overlays.class.info.innerHTML = `
+            <ul>
+                <li>Status: ${status}</li>
+                <li>Number of Methods: ${d.data.num_methods}</li>
+                <li>Total Binary Size: ${d.data.total_binary_size.toLocaleString()} bytes</li>
+            </ul>
+        `
+    }
+
+    update() {
+        let tree = d3.hierarchy(this.classData, (d) => { return d.children; });
+
+        this.area_function(tree)
+
+        tree.sort((a, b) => d3.descending(a.value, b.value));
+
+        d3.pack()
+            .size([this.width - 2 * this.margin, this.height - 2 * this.margin])
+            .padding(5)
+            (tree);
+
+        let nodes = this.draggableGroup.selectAll("g")
+            .data(tree.descendants(), d => d.data.id);
+
+        let nodesEnter = nodes.enter()
+            .append("g");
+
+        nodesEnter.append("circle")
+            .on("click", (e, d) => this.onClassClick(e, d))
+            .append("title")
+            
+        nodesEnter.append("path");
+        nodesEnter.append("text");
+
+        nodes.merge(nodesEnter)
+            .select("circle")
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y)
+            .attr("r", d => d.r > 0 ? d.r : 1) // A little hacky - does a better solution to display classes with zero methods / size exist?
+            .attr("fill", d => {
+                if (d.children)
+                    // this is a namespace, fill with the background color
+                    return "#fff";
+
+                if (d.r == 0)
+                    // This is a "empty" class in some way - it should have stroke, but no fill
+                    return "#ccc"
+
+                return this.colors[d.data.type];
+            })
+            .attr("stroke", d => {
+                if (d.children)
+                    return "#ddd";
+
+                if (d.r == 0)
+                    return "#000";
+                
+                return null;
+            })
+            .attr("stroke-width", d => d.r == 0 ? .1 : d.r * .01)
+
+            .select("title")
+            .text(d => d.data.name)
+
+
+        function calculateNamespaceLabelFontSize(d) {
+            return d.r * .2;
+        }
+
+        nodes.merge(nodesEnter)
+            .select("path")
+            .filter(d => d.children)
+            .attr("d", d => {
+                let effectiveRadius;
+
+                if (!d.parent || d.parent.children.length < 10) {
+                    effectiveRadius = d.r; // outside
+                } else if (d.children.length > 10) {
+                    effectiveRadius = d.r - calculateNamespaceLabelFontSize(d) * .25; // middle 
+                } else {
+                    effectiveRadius = d.r - calculateNamespaceLabelFontSize(d); // inside
+                }
+
+                return `M ${d.x} ${d.y + effectiveRadius} A ${-effectiveRadius} ${-effectiveRadius} 0 1 1 ${d.x + .01} ${d.y + effectiveRadius}`
+            })
+            .attr("fill", "none")
+            .attr("id", d => `text-curve-${d.data.id}`)
+
+        nodes.merge(nodesEnter)
+            .select("text")
+            .filter(d => d.children)
+            .attr("font-size", d => `${calculateNamespaceLabelFontSize(d)}px`)
+            .append("textPath")
+            .attr("xlink:href", d => `#text-curve-${d.data.id}`)
+            .attr("text-anchor", "middle")
+            .attr("startOffset", "50%")
+            .text(d => d.data.name.split("::").at(-1))
+
+        nodes.exit().remove();
     }
 
     async run() {
         await this.fetchData();
 
         this.svg = d3.select("body").append("svg")
-            .attr("width", this.width)
-            .attr("height", this.height);
+            .attr("id", "svg")
+            .attr("viewBox", [-this.margin, -this.margin, this.width, this.height]);
 
-        this.simulation = d3.forceSimulation()
-            .force("link", d3.forceLink().id(function (d) { return d.id; }))
-            .force("charge", d3.forceManyBody().strength(-100))
-            .force("center", d3.forceCenter(this.width / 2, this.height / 2))
-            .on("tick", () => this.ticked());
 
-        let simulationGroup = this.svg.append("g");
+        let draggableGroup = this.svg.append("g");
+        this.draggableGroup = draggableGroup;
 
         function handleZoom(e) {
-            simulationGroup.attr('transform', e.transform);
-            return false;
+            draggableGroup.attr('transform', e.transform);
         }
 
         let zoom = d3.zoom()
@@ -37,148 +196,20 @@ class BotwVisualisation {
         d3.select('svg')
             .call(zoom);
 
-        this.link = simulationGroup.append("g")
-            .attr("class", "links")
-            .selectAll("line");
-
-        this.node = simulationGroup.append("g")
-            .attr("class", "nodes")
-            .selectAll("circle");
-
-        this.updateNetworkGraph();
-    }
-
-    updateNetworkGraph() {
-        let tree = d3.hierarchy(this.classData, (d) => { return d.children; });
-
-        this.link = this.link.data(tree.links(), (d) => { return d.target.data.id; })
-            .join("line");
-
-        this.node = this.node.data(tree.descendants(), (d) => { return d.data.id; })
-            .join("circle")
-            .attr("r", (d) => {
-                if (d.data.name == "root")
-                    return 12;
-
-                return d.data.type == "namespace" ? 7 : 5
-            })
-            .attr("fill", (d) => {
-                if (d.data.name == "root")
-                    return "black";
-
-                switch (d.data.type) {
-                    case "namespace":
-                        return "blue";
-                        break;
-
-                    case "undecompiled_class":
-                        return "red";
-                        break;
-
-                    case "partially_decompiled_class":
-                        return "orange";
-                        break;
-
-                    case "decompiled_class":
-                        return "green";
-                        break;
-                }
-            })
-            .on("dblclick", (e, d) => this.dblclick(e, d))
-            .on("mouseover", (e, d) => {
-                this.overlay.overlay.style.display = "block";
-                this.overlay.className.innerText = d.data.name;
-                this.overlay.classStatus.innerText = d.data.type;
-            })
-            .on("mouseout", (e, d) => {
-                this.overlay.overlay.style.display = "none";
-            })
-            .call(this.drag(this.simulation));
-
-        this.node.append("text")
-            .attr("dy", ".35em")
-            .text(function (d) { return d.data.name; });
-
-        this.simulation.nodes(tree.descendants())
-            .on("tick", () => this.ticked());
-
-        this.simulation.force("link").links(tree.links());
-    }
-
-    ticked() {
-        this.link
-            .attr("x1", d => d.source.x)
-            .attr("y1", d => d.source.y)
-            .attr("x2", d => d.target.x)
-            .attr("y2", d => d.target.y);
-
-        this.node
-            .attr("cx", d => d.x)
-            .attr("cy", d => d.y);
-    }
-
-    dblclick(e, d) {
-        if ((Array.isArray(d.data.children) && d.data.children.length == 0) || (Array.isArray(d.data._children) && d.data._children.length == 0)) {
-            return;
-        }
-
-        if (d.data.children != null) {
-            d.data._children = d.data.children;
-            d.data.children = null;
-            d.data.collapsed = true;
-        } else {
-            d.data.children = d.data._children;
-            d.data._children = null;
-            d.data.collapsed = false;
-        }
-
-        this.updateNetworkGraph();
-    }
-
-    drag(simulation) {
-        function dragstarted(event) {
-            if (!event.active) simulation.alphaTarget(0.3).restart();
-            event.subject.fx = event.subject.x;
-            event.subject.fy = event.subject.y;
-        }
-
-        function dragged(event) {
-            event.subject.fx = event.x;
-            event.subject.fy = event.y;
-        }
-
-        function dragended(event) {
-            if (!event.active) simulation.alphaTarget(0);
-            event.subject.fx = null;
-            event.subject.fy = null;
-        }
-
-        return d3.drag()
-            .on("start", dragstarted)
-            .on("drag", dragged)
-            .on("end", dragended);
+        this.update();
     }
 
     async fetchData() {
         this.classData = await d3.json("graph.json");
-
-        // Collapse everything
-        function recursivelyCollapse(obj) {
-            obj._children = obj.children;
-            obj.children = null;
-
-            obj._children.forEach(recursivelyCollapse);
-        }
-
-        recursivelyCollapse(this.classData);
     }
 };
 
 document.addEventListener("DOMContentLoaded", async () => {
     const botwVisualisations = new BotwVisualisation({
         el: document.body,
-        width: 800,
-        height: 500,
+        width: 2400,
+        height: 1200,
+        margin: 100,
     });
 
     await botwVisualisations.run();

@@ -44,14 +44,14 @@ def parse_row(row):
     return {
         "address": int(row["Address"], base=16),
         "quality": row["Quality"],
-        "size": row["Size"],
+        "size": int(row["Size"]),
         "name": demangle_function_name(row["Name"])
     }
 
 with open("botw/data/uking_functions.csv", newline="") as f:
     functions = list(map(parse_row, csv.DictReader(f)))
 
-CLASS_FQN_NAMES = list(d.keys())
+CLASS_FQN_NAMES = d
 CLASS_NAMES = [i.split("::")[-1] for i in CLASS_FQN_NAMES]
 CLASS_NAME_TO_FQN_MAP = {i.split("::")[-1] : i for i in CLASS_FQN_NAMES}
 
@@ -85,28 +85,34 @@ for (file, namespace_prefix) in CLASS_STATUS_OVERRIDE_FILES:
             CLASS_STATUS_OVERRIDES[fqn] = "partially_decompiled_class" if status == "pending" else "decompiled_class"
 
 def determine_class_status(class_):
-    if class_ in CLASS_STATUS_OVERRIDES:
-        return CLASS_STATUS_OVERRIDES[class_]
-
+    num_methods = 0
+    total_binary_size = 0
+    
     try:
         class_functions = CLASS_FUNCTIONS[class_]
+        num_methods = len(class_functions)
+        total_binary_size = sum([i["size"] for i in class_functions])
     except Exception as e:
         # No functions found whatsoever
-        return "undecompiled_class"
+        if class_ not in CLASS_STATUS_OVERRIDES:
+            return "undecompiled_class", num_methods, total_binary_size
+    
+    if class_ in CLASS_STATUS_OVERRIDES:
+        return CLASS_STATUS_OVERRIDES[class_], num_methods, total_binary_size
 
     class_function_qualities = set([i['quality'] for i in class_functions])
 
     if len(class_function_qualities) == 0 or class_function_qualities == {"U"}:
-        return "undecompiled_class"
+        return "undecompiled_class",  num_methods, total_binary_size
     elif class_function_qualities == {"O"}:
-        return "decompiled_class"
+        return "decompiled_class", num_methods, total_binary_size
     
-    return "partially_decompiled_class"
+    return "partially_decompiled_class", num_methods, total_binary_size
 
 TREE = {"id": 0, "name": "root", "type": "namespace", "children": []}
 node_id_counter = 1
 
-for class_ in d.keys():
+for class_ in CLASS_FQN_NAMES:
     class_fqn_pieces = class_.split("::")
     class_name = class_fqn_pieces[-1]
 
@@ -124,7 +130,10 @@ for class_ in d.keys():
             if class_name == piece:
                 # We've hit the end of this FQN.
                 # Add on some metadata about this class
-                new_child["type"] = determine_class_status(class_)
+                class_status, num_methods, total_binary_size = determine_class_status(class_)
+                new_child["type"] = class_status
+                new_child["num_methods"] = num_methods
+                new_child["total_binary_size"] = total_binary_size
 
             current_tree.append(new_child)
             current_tree = current_tree[-1]['children']
@@ -133,5 +142,5 @@ for class_ in d.keys():
 
         current_fqn += "::"
 
-with open("site/graph.json", "w") as f:
+with open("docs/graph.json", "w") as f:
     json.dump(TREE, f)
