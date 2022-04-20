@@ -4,7 +4,7 @@ import json
 import csv
 import re
 
-with open("out.json") as f:
+with open("classes.json") as f:
     d = json.load(f)
 
 def demangle_function_name(function_name):
@@ -112,7 +112,12 @@ def determine_class_status(class_):
 TREE = {"id": 0, "name": "root", "type": "namespace", "children": []}
 node_id_counter = 1
 
-for class_ in CLASS_FQN_NAMES:
+# The sort here is a byproduct of dealing with nested classes
+# Without it, we'd have to deal for the case where a child class appears before its parent
+# as well as a parent class appearing before its child.
+# Sorting the class names by length gurantees that parent classes will appear before their children,
+# and we only have to deal with the latter case. 
+for class_ in sorted(CLASS_FQN_NAMES, key = lambda class_: len(class_)):
     class_fqn_pieces = class_.split("::")
     class_name = class_fqn_pieces[-1]
 
@@ -121,7 +126,9 @@ for class_ in CLASS_FQN_NAMES:
     for piece in class_fqn_pieces:
         current_fqn += piece
         
-        parent_index = next(iter(index for (index, d) in enumerate(current_tree) if d['name'] == current_fqn), -1)
+        parent_index, parent = next(iter((index, d) for (index, d) in enumerate(current_tree) if d['name'] == current_fqn and d['type'] == "namespace"), (-1, None))
+        if parent_index == -1:
+            parent_index, parent = next(iter((index, d) for (index, d) in enumerate(current_tree) if d['name'] == current_fqn), (-1, None))
 
         if parent_index == -1:
             new_child = {"id": node_id_counter, "name": current_fqn, "type": "namespace", "children": []}
@@ -138,6 +145,21 @@ for class_ in CLASS_FQN_NAMES:
             current_tree.append(new_child)
             current_tree = current_tree[-1]['children']
         else:
+            if parent["type"] != "namespace":
+                # We've got a nested class on our hands
+                # For now, duplicate the parent node and set its type to namespace to ensure
+                # both the parent class and all classes underneath it our visualised.
+                new_parent = {
+                    "id": node_id_counter,
+                    "name": parent["name"],
+                    "type": "namespace",
+                    "children": []
+                }
+
+                parent_index = -1
+                node_id_counter += 1
+                current_tree.append(new_parent)
+
             current_tree = current_tree[parent_index]['children']
 
         current_fqn += "::"
