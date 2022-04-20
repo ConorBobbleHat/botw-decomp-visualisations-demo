@@ -1,3 +1,128 @@
+class SearchBox {
+    constructor(el, data, keys, textFunction, resultSelectedCallback, numSearchResultsShown) {
+        if (numSearchResultsShown === undefined) {
+            numSearchResultsShown = 5;
+        }
+
+        this.numSearchResultsShown = numSearchResultsShown;
+        this.textFunction = textFunction;
+        this.resultSelectedCallback = resultSelectedCallback;
+
+        this.searchContainer = document.createElement("div");
+        this.searchContainer.className = "searchbox-container"
+        el.append(this.searchContainer)
+
+        this.textbox = document.createElement("input");
+        this.textbox.type = "text";
+        this.textbox.className = "searchbox-textbox";
+        this.textbox.addEventListener("input", (e) => this.onTextboxChange(e));
+        this.textbox.addEventListener("keydown", (e) => this.onTextboxKeydown(e));
+        this.textbox.addEventListener("focus", (e) => this.onTextboxChange(e));
+        this.searchContainer.append(this.textbox);
+
+        this.searchResultsContainer = document.createElement("div");
+        this.searchResultsContainer.className = "searchbox-searchresultscontainer"
+        this.searchContainer.append(this.searchResultsContainer);
+
+        this.fuse = new Fuse(data, { keys: keys });
+
+        this.searchResults = [];
+        this.searchResultElements = [];
+        this.selectedResultIndex = -1;
+    }
+
+    onTextboxChange(e) {
+        this.searchResults = this.fuse.search(this.textbox.value).slice(0, this.numSearchResultsShown);
+
+        this.searchResultElements.forEach((e) => e.remove());
+
+        this.searchResultElements = this.searchResults.map((searchResult, index) => {
+            let searchResultElement = document.createElement("span");
+            searchResultElement.innerText = this.textFunction(searchResult.item);
+            searchResultElement.className = "searchbox-searchresult";
+            searchResultElement.addEventListener("mouseover", e => this.onSearchResultHover(e, index))
+            searchResultElement.addEventListener("click", e => this.onSearchResultClick(e))
+
+            this.searchResultsContainer.append(searchResultElement);
+            return searchResultElement;
+        });
+
+        this.selectedResultIndex = -1;
+    }
+
+    onTextboxKeydown(e) {
+        let dir = 0;
+        switch (e.code) {
+            case "ArrowUp":
+                dir = -1;
+                break;
+
+            case "ArrowDown":
+                dir = 1;
+                break;
+
+            case "Tab":
+                dir = e.getModifierState("Shift") ? -1 : 1;
+                break;
+
+            case "Enter":
+                this.onSearchResultClick();
+                return;
+                break;
+
+            default:
+                return;
+        }
+
+        e.preventDefault();
+
+        if (this.searchResultElements.length == 0)
+            return;
+
+        if (this.selectedResultIndex == -1) {
+            this.selectedResultIndex = dir == 1 ? 0 : this.searchResultElements.length - 1;
+        } else {
+            this.selectedResultIndex += dir;
+
+            if (this.selectedResultIndex < 0) {
+                this.selectedResultIndex = this.searchResultElements.length - 1;
+            }
+
+            if (this.selectedResultIndex >= this.searchResultElements.length) {
+                this.selectedResultIndex = 0;
+            }
+        }
+
+        this.updatedHighligtedResult();
+    }
+
+    updatedHighligtedResult() {
+        this.searchResultElements.forEach((el, index) => {
+            if (index == this.selectedResultIndex) {
+                el.classList.add("searchbox-selectedresult");
+            } else {
+                el.classList.remove("searchbox-selectedresult");
+            }
+        });
+    }
+
+    onTextboxFocusout(e) {
+        this.searchResultElements.forEach((e) => e.remove());
+        this.selectedResultIndex = -1;
+    }
+
+    onSearchResultHover(e, index) {
+        this.selectedResultIndex = index;
+        this.updatedHighligtedResult();
+    }
+
+    onSearchResultClick(e) {
+        this.resultSelectedCallback(this.searchResults[this.selectedResultIndex].item);
+        this.onTextboxFocusout();
+        this.textbox.value = "";
+    }
+}
+
 class BotwVisualisation {
     constructor(options) {
         this.el = options.el;
@@ -18,7 +143,12 @@ class BotwVisualisation {
                 info: document.getElementById("class-overlay-info")
             },
             settings: {
-                choices: document.getElementById("settings-overlay-area-choices")
+                box: document.getElementById("settings-overlay"),
+                choices: document.getElementById("settings-overlay-area-choices"),
+                hideSearchbox: document.getElementById("settings-overlay-hide-searchbox"),
+                hiddenNodesContainer: document.getElementById("settings-overlay-hidden-nodes-container"),
+                hiddenNodes: document.getElementById("settings-overlay-hidden-nodes"),
+                resetHiddenNodes: document.getElementById("settings-overlay-reset-hidden-nodes")
             }
         }
 
@@ -34,7 +164,7 @@ class BotwVisualisation {
             { name: "Total Binary Size", id: "total_binary_size" }
         ];
 
-        this.area_function = this.AREA_FUNCTIONS['constant'];
+        this.areaFunction = this.AREA_FUNCTIONS['constant'];
 
         let areaFunctionRadios = d3.select(this.overlays.settings.choices)
             .selectAll("label")
@@ -47,7 +177,7 @@ class BotwVisualisation {
             .attr("type", "radio")
             .attr("name", "areaOptions")
             .on("change", (e, d) => this.onAreaFunctionChange(e, d))
-            .filter(d => d.id == "constant")
+            .filter(d => d.id === "constant")
             .property("checked", true)
 
         areaFunctionRadios
@@ -55,12 +185,12 @@ class BotwVisualisation {
     }
 
     onAreaFunctionChange(e, d) {
-        this.area_function = this.AREA_FUNCTIONS[d.id];
+        this.areaFunction = this.AREA_FUNCTIONS[d.id];
         this.update();
     }
 
     onClassMouseover(e, d, ths) {
-        if (d.data.type == "namespace")  {
+        if (d.data.type === "namespace") {
             return false;
         }
 
@@ -83,9 +213,9 @@ class BotwVisualisation {
     }
 
     update() {
-        let tree = d3.hierarchy(this.classData, (d) => { return d.children; });
+        let tree = d3.hierarchy(this.selectedData, (d) => { return d.children; });
 
-        this.area_function(tree)
+        this.areaFunction(tree)
 
         tree.sort((a, b) => d3.descending(a.value, b.value));
 
@@ -103,17 +233,17 @@ class BotwVisualisation {
         nodesEnter.append("circle")
             .on("mouseover.info", (e, d) => this.onClassMouseover(e, d))
             .on("mouseover.stroke", function (e, d) {
-                if (d.data.type == "namespace" || d.r == 0)
+                if (d.data.type === "namespace" || d.r === 0)
                     return;
 
                 d3.select(this)
                     .transition()
                     .duration(100)
                     .attr("stroke", "black")
-                    .attr("stroke-width", `${d.r * .1}px`)   
+                    .attr("stroke-width", `${d.r * .1}px`)
             })
             .on("mouseout", function (e, d) {
-                if (d.data.type == "namespace" || d.r == 0)
+                if (d.data.type === "namespace" || d.r === 0)
                     return;
 
                 d3.select(this)
@@ -121,7 +251,7 @@ class BotwVisualisation {
                     .attr("stroke", "none")
             })
             .append("title")
-            
+
         nodesEnter.append("path");
         nodesEnter.append("text");
 
@@ -135,7 +265,7 @@ class BotwVisualisation {
                     // this is a namespace, fill with the background color
                     return "#fff";
 
-                if (d.r == 0)
+                if (d.r === 0)
                     // This is a "empty" class in some way - it should have stroke, but no fill
                     return "#ccc"
 
@@ -145,12 +275,12 @@ class BotwVisualisation {
                 if (d.children)
                     return "#ddd";
 
-                if (d.r == 0)
+                if (d.r === 0)
                     return "#000";
-                
+
                 return null;
             })
-            .attr("stroke-width", d => d.r == 0 ? .1 : d.r * .01)
+            .attr("stroke-width", d => d.r === 0 ? .1 : d.r * .01)
 
             .select("title")
             .text(d => d.data.name)
@@ -187,7 +317,7 @@ class BotwVisualisation {
             .attr("xlink:href", d => `#text-curve-${d.data.id}`)
             .attr("text-anchor", "middle")
             .attr("startOffset", "50%")
-            .text(d => d.data.name.split("::").at(-1))
+            .text(d => d.data.name == "root" ? "" : d.data.name.split("::").at(-1))
 
         nodes.exit().remove();
     }
@@ -195,10 +325,56 @@ class BotwVisualisation {
     async run() {
         await this.fetchData();
 
+        let flattenedNodes = [];
+
+        function flattenNodes(root) {
+            let flattenedRoot = Object.assign({}, root);
+            delete flattenedRoot["children"];
+            flattenedNodes.push(flattenedRoot);
+
+            root["children"].forEach(flattenNodes);
+        }
+
+        flattenNodes(this.classData);
+
+        // Give the user a way to hide namespaces / classes they don't want to see
+        new SearchBox(this.overlays.settings.hideSearchbox, flattenedNodes, ["name"],
+            (item) => `${item.name} (${item.type == "namespace" ? "Namespace" : "Class"})`,
+            (item) => {
+                let hiddenNodes = JSON.parse(window.localStorage.getItem("hiddenNodes")) || [];
+
+                // Have we hidden this node already?
+                let shouldReturn = false;
+                hiddenNodes.forEach((hiddenNode) => {
+                    if (hiddenNode.name == item.name && ((item.type == "namespace" && hiddenNode.type == "namespace") || (item.type != "namespace" && hiddenNode.type != "namespace"))) {
+                        shouldReturn = true;
+                    }
+                });
+
+                if (shouldReturn)
+                    return;
+
+                let serializableItem = Object.assign({}, item);
+                delete serializableItem.children;
+                delete serializableItem.id; // Not guranteed to persist across updates to the data file
+
+                hiddenNodes.push(serializableItem);
+                window.localStorage.setItem("hiddenNodes", JSON.stringify(hiddenNodes));
+
+                this.updateHiddenNodes();
+            }
+        );
+
+        this.overlays.settings.resetHiddenNodes.addEventListener("click", () => {
+            window.localStorage.setItem("hiddenNodes", "[]");
+            this.updateHiddenNodes();
+        });
+
+        this.selectedData = this.classData;
+
         this.svg = d3.select("body").append("svg")
             .attr("id", "svg")
             .attr("viewBox", [-this.margin, -this.margin, this.width, this.height]);
-
 
         let draggableGroup = this.svg.append("g");
         this.draggableGroup = draggableGroup;
@@ -213,7 +389,50 @@ class BotwVisualisation {
         d3.select('svg')
             .call(zoom);
 
+        this.updateHiddenNodes(); // calls this.update()
+    }
+
+    updateHiddenNodes() {
+        let hiddenNodes = JSON.parse(window.localStorage.getItem("hiddenNodes")) || [];
+
+        // Set this.selectedData to be a subset of this.classData to hide all the nodes
+        // we've been instructed to do
+        this.selectedData = {}
+
+        function reconstructTree(root) {
+            let shouldReturn = false;
+            hiddenNodes.forEach((hiddenNode) => {
+                if (hiddenNode.name == root.name && ((root.type == "namespace" && hiddenNode.type == "namespace") || (root.type != "namespace" && hiddenNode.type != "namespace"))) {
+                    shouldReturn = true;
+                }
+            });
+
+            if (shouldReturn)
+                return null;
+
+            let reconstructedRoot = Object.assign({}, root);
+            let children = root.children.map(reconstructTree);
+            reconstructedRoot["children"] = children.filter((child) => child != null);
+
+            return reconstructedRoot;
+        }
+
+        this.selectedData = reconstructTree(this.classData);
+        this.updateHiddenNodesList();
         this.update();
+    }
+
+    updateHiddenNodesList() {
+        let hiddenNodes = JSON.parse(window.localStorage.getItem("hiddenNodes")) || [];
+
+        this.overlays.settings.hiddenNodesContainer.style.display = hiddenNodes.length == 0 ? "none" : "block";
+        this.overlays.settings.hiddenNodes.replaceChildren(); // remove all existing nodes
+
+        hiddenNodes.forEach((hiddenNode) => {
+            let hiddenNodeElement = document.createElement("li");
+            hiddenNodeElement.innerText = `${hiddenNode.name} (${hiddenNode.type == "namespace" ? "Namespace" : "Class"})`;
+            this.overlays.settings.hiddenNodes.append(hiddenNodeElement);
+        });
     }
 
     async fetchData() {

@@ -20,6 +20,14 @@
             font-family: 'Roboto', sans-serif;
         }
 
+        p {
+            line-height: .2;
+        }
+
+        hr {
+            color: #bbb;
+        }
+
         #overlay-container {
             position: absolute;
             left: 0;
@@ -28,17 +36,52 @@
 
         .overlay {
             background-color: #dddddddd;
+            border-radius: 4px;
 
-            margin-left: 10px;
-            margin-top: 10px;
-
+            margin: 10px;
             padding: 10px;
 
             width: fit-content;
         }
 
         #class-overlay-name {
-            font-size: 3em;
+            font-size: 2.5em;
+        }
+
+        .searchbox-container {
+            position: relative;
+        }
+
+        .searchbox-textbox {
+            box-sizing: border-box;
+            width: 100%;
+            height: 1.8em;
+        }
+
+        .searchbox-searchresultscontainer {
+            position: absolute;
+            bottom: 0;
+            top: 0;
+
+            box-sizing: border-box;
+            min-width: 100%;
+
+            margin-top: 1.8em;
+        }
+
+        .searchbox-searchresult {
+            display: block;
+            background-color: #fff;
+            padding: 5px;
+            white-space: nowrap;
+            box-sizing: border-box;
+            min-width: 100%;
+            border: solid #aaa 1px;
+        }
+
+        .searchbox-selectedresult {
+            background-color: #007bff;
+            color: #fff;
         }
     </style>
 </head>
@@ -46,20 +89,28 @@
 <body>
     <div id="overlay-container">
         <div id="class-overlay" class="overlay" style="display: none;">
-            <span id="class-overlay-name">Hello</span ><br />
+            <span id="class-overlay-name">Hello</span><br />
             <span id="class-overlay-info">World</span> <br />
         </div>
 
         <div id="settings-overlay" class="overlay">
-            <p>
-                Class area:
-                <div id="settings-overlay-area-choices"></div>
-            </p>
+            <p>Class area:</p>
+            <div id="settings-overlay-area-choices"></div>
 
+            <hr />
+
+            <p>Hide class / namespace:</p>
+            <div id="settings-overlay-hide-searchbox"></div>
+            <div id="settings-overlay-hidden-nodes-container" style="display: none;">
+                <p>Hidden nodes:</p>
+                <ul id="settings-overlay-hidden-nodes"></ul>
+            </div>
+            <button id="settings-overlay-reset-hidden-nodes">Reset Hidden Nodes</button>
         </div>
     </div>
 
     <script src="d3.v7.min.js"></script>
+    <script src="fuse.min.js"></script>
     <script src="index.js"></script>
 </body>
 
