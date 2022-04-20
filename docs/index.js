@@ -6,7 +6,7 @@ class BotwVisualisation {
         this.margin = options.margin;
 
         this.colors = {
-            "undecompiled_class": "#d62728",
+            "not_yet_decompiled_class": "#d62728",
             "partially_decompiled_class": "#ff7f0e",
             "decompiled_class": "#2ca02c"
         }
@@ -59,9 +59,8 @@ class BotwVisualisation {
         this.update();
     }
 
-    onClassClick(e, d) {
+    onClassMouseover(e, d) {
         if (d.data.type == "namespace")  {
-            this.overlays.class.box.style.display = "none";
             return false;
         }
 
@@ -69,7 +68,7 @@ class BotwVisualisation {
         this.overlays.class.name.innerText = d.data.name;
 
         let status = {
-            "undecompiled_class": "Undecompiled",
+            "not_yet_decompiled_class": "Not Yet Decompiled",
             "partially_decompiled_class": "Partially Decompiled",
             "decompiled_class": "Decompiled"
         }[d.data.type];
@@ -102,7 +101,8 @@ class BotwVisualisation {
             .append("g");
 
         nodesEnter.append("circle")
-            .on("click", (e, d) => this.onClassClick(e, d))
+            .on("mouseover", (e, d) => this.onClassMouseover(e, d))
+            //.on("mouseout", (e, d) => this.overlays.class.box.style.display = "none")
             .append("title")
             
         nodesEnter.append("path");

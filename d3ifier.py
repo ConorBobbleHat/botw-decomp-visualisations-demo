@@ -95,7 +95,7 @@ def determine_class_status(class_):
     except Exception as e:
         # No functions found whatsoever
         if class_ not in CLASS_STATUS_OVERRIDES:
-            return "undecompiled_class", num_methods, total_binary_size
+            return "not_yet_decompiled_class", num_methods, total_binary_size
     
     if class_ in CLASS_STATUS_OVERRIDES:
         return CLASS_STATUS_OVERRIDES[class_], num_methods, total_binary_size
@@ -103,7 +103,7 @@ def determine_class_status(class_):
     class_function_qualities = set([i['quality'] for i in class_functions])
 
     if len(class_function_qualities) == 0 or class_function_qualities == {"U"}:
-        return "undecompiled_class",  num_methods, total_binary_size
+        return "not_yet_decompiled_class",  num_methods, total_binary_size
     elif class_function_qualities == {"O"}:
         return "decompiled_class", num_methods, total_binary_size
     
