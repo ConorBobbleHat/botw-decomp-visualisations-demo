@@ -59,7 +59,7 @@ class BotwVisualisation {
         this.update();
     }
 
-    onClassMouseover(e, d) {
+    onClassMouseover(e, d, ths) {
         if (d.data.type == "namespace")  {
             return false;
         }
@@ -101,8 +101,25 @@ class BotwVisualisation {
             .append("g");
 
         nodesEnter.append("circle")
-            .on("mouseover", (e, d) => this.onClassMouseover(e, d))
-            //.on("mouseout", (e, d) => this.overlays.class.box.style.display = "none")
+            .on("mouseover.info", (e, d) => this.onClassMouseover(e, d))
+            .on("mouseover.stroke", function (e, d) {
+                if (d.data.type == "namespace" || d.r == 0)
+                    return;
+
+                d3.select(this)
+                    .transition()
+                    .duration(100)
+                    .attr("stroke", "black")
+                    .attr("stroke-width", `${d.r * .1}px`)   
+            })
+            .on("mouseout", function (e, d) {
+                if (d.data.type == "namespace" || d.r == 0)
+                    return;
+
+                d3.select(this)
+                    .interrupt()
+                    .attr("stroke", "none")
+            })
             .append("title")
             
         nodesEnter.append("path");
