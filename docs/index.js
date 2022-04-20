@@ -28,7 +28,7 @@ class SearchBox {
 
         this.searchResults = [];
         this.searchResultElements = [];
-        this.selectedResultIndex = -1;
+        this.selectedResultIndex = 0;
     }
 
     onTextboxChange(e) {
@@ -47,7 +47,8 @@ class SearchBox {
             return searchResultElement;
         });
 
-        this.selectedResultIndex = -1;
+        this.selectedResultIndex = 0;
+        this.updatedHighligtedResult();
     }
 
     onTextboxKeydown(e) {
@@ -79,18 +80,14 @@ class SearchBox {
         if (this.searchResultElements.length == 0)
             return;
 
-        if (this.selectedResultIndex == -1) {
-            this.selectedResultIndex = dir == 1 ? 0 : this.searchResultElements.length - 1;
-        } else {
-            this.selectedResultIndex += dir;
+        this.selectedResultIndex += dir;
 
-            if (this.selectedResultIndex < 0) {
-                this.selectedResultIndex = this.searchResultElements.length - 1;
-            }
+        if (this.selectedResultIndex < 0) {
+            this.selectedResultIndex = this.searchResultElements.length - 1;
+        }
 
-            if (this.selectedResultIndex >= this.searchResultElements.length) {
-                this.selectedResultIndex = 0;
-            }
+        if (this.selectedResultIndex >= this.searchResultElements.length) {
+            this.selectedResultIndex = 0;
         }
 
         this.updatedHighligtedResult();
@@ -227,8 +224,14 @@ class BotwVisualisation {
         let nodes = this.draggableGroup.selectAll("g")
             .data(tree.descendants(), d => d.data.id);
 
+        let text = this.draggableGroup.selectAll("text")
+            .data(tree.descendants(), d => d.data.id);
+
         let nodesEnter = nodes.enter()
             .append("g");
+
+        let textEnter = text.enter()
+            .append("text");
 
         nodesEnter.append("circle")
             .on("mouseover.info", (e, d) => this.onClassMouseover(e, d))
@@ -253,7 +256,6 @@ class BotwVisualisation {
             .append("title")
 
         nodesEnter.append("path");
-        nodesEnter.append("text");
 
         nodes.merge(nodesEnter)
             .select("circle")
@@ -309,8 +311,7 @@ class BotwVisualisation {
             .attr("fill", "none")
             .attr("id", d => `text-curve-${d.data.id}`)
 
-        nodes.merge(nodesEnter)
-            .select("text")
+        text.merge(textEnter)
             .filter(d => d.children)
             .attr("font-size", d => `${calculateNamespaceLabelFontSize(d)}px`)
             .append("textPath")
